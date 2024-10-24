@@ -2,6 +2,8 @@ const express = require("express");
 const axios = require("axios");
 const CryptoJS = require("crypto-js");
 const cors = require("cors");
+const { sendEmail } = require('./mailer');
+require('dotenv').config()
 const app = express();
 
 app.use(cors({
@@ -43,7 +45,7 @@ router.post("/payment", async (req, res) => {
 
         const transactionId = generateTranscId();
         const data = {
-            merchantId: "M225CKRAZD7WR",
+            merchantId: process.env.MERCHANT_ID,
             merchantTransactionId: transactionId,
             merchantUserId: "MUID" + transactionId,
             amount: price * 100,
@@ -57,8 +59,8 @@ router.post("/payment", async (req, res) => {
 
         const payload = JSON.stringify(data);
         const payloadMain = Buffer.from(payload).toString("base64");
-        const key = "e4406b88-f1d2-4652-8c0c-d2574f29294a";
-        const keyIndex = 1;
+        const key = process.env.KEY;
+        const keyIndex = process.env.KEY_INDEX;
         const string = payloadMain + "/pg/v1/pay" + key;
         const sha256 = CryptoJS.SHA256(string).toString();
         const checksum = sha256 + "###" + keyIndex;
@@ -106,11 +108,11 @@ router.post("/payment", async (req, res) => {
         console.error("Payment processing error:", error);
         res.status(error.response?.status || 500).json({
             status: "error",
-            message: error.message || "Payment initialization failed"
+            message: error.message || "Payment initialization failed",
+            redirectUrl: `https://infidiyas.com/failure`
         });
     }
 });
-
 
 router.post("/orders/callback/:transactionId", async (req, res) => {
     const transactionId = req.params.transactionId;
@@ -119,7 +121,6 @@ router.post("/orders/callback/:transactionId", async (req, res) => {
     try {
         console.log("Received payment callback:", { transactionId, formData, cartProducts });
 
-        // Prepare an array of data for each cart item to be added to the Excel sheet
         const requests = cartProducts.map(cartItem => {
             return {
                 TransactionId: transactionId,
@@ -130,11 +131,11 @@ router.post("/orders/callback/:transactionId", async (req, res) => {
                 City: formData.city,
                 Zip: formData.zip,
                 ProductId: cartItem.productId,
+                ProductName: cartItem.productName,
                 Quantity: cartItem.quantity
             };
         });
 
-        // Send data for each cart item to the Sheetbest API
         const responses = await Promise.all(
             requests.map(async (data) => {
                 return axios.post("https://api.sheetbest.com/sheets/3fcaf326-2cbe-4a34-810d-2f8b442f48fa", data, {
@@ -143,9 +144,15 @@ router.post("/orders/callback/:transactionId", async (req, res) => {
             })
         );
 
-        // Check if all the responses were successful
         const allSuccessful = responses.every(response => response.status === 200 || response.status === 201);
         if (allSuccessful) {
+            const userEmail = formData.email;
+            const userName = formData.name;
+            const subject = "Thank You for Your Purchase!";
+            const text = `Dear ${userName},\n\nThank you for your purchase! & Your transaction ID is ${transactionId}.\n\nWe Love You	&#128140;!\n\nBy,\nThe Mr.N`;
+
+            await sendEmail(userEmail, subject, text);
+
             res.status(200).json({ status: "success", redirectUrl: `https://infidiyas.com/success/${transactionId}` });
         } else {
             throw new Error("Failed to update the Excel sheet for some items.");
@@ -156,7 +163,6 @@ router.post("/orders/callback/:transactionId", async (req, res) => {
         res.status(500).json({ status: "error", message: "Failed to update the Excel sheet." });
     }
 });
-
 
 app.use("/api/v1", router);
 
