@@ -49,9 +49,9 @@ router.post("/payment", async (req, res) => {
             merchantTransactionId: transactionId,
             merchantUserId: "MUID" + transactionId,
             amount: price * 100,
-            redirectUrl: `https://infidiyas.com/success/${transactionId}`,
+            redirectUrl: `${process.env.BASE_URL}/success/${transactionId}`,
             redirectMode: "POST",
-            callbackUrl: `https://infidiyas.com/api/v1/orders/callback/${transactionId}`,
+            callbackUrl: `${process.env.BASE_URL}/api/v1/orders/callback/${transactionId}`,
             paymentInstrument: {
                 type: "PAY_PAGE"
             }
@@ -67,7 +67,7 @@ router.post("/payment", async (req, res) => {
 
         const response = await axios({
             method: "POST",
-            url: "https://api.phonepe.com/apis/hermes/pg/v1/pay",
+            url: process.env.PORD_URL,
             headers: {
                 accept: "application/json",
                 "Content-Type": "application/json",
@@ -109,7 +109,7 @@ router.post("/payment", async (req, res) => {
         res.status(error.response?.status || 500).json({
             status: "error",
             message: error.message || "Payment initialization failed",
-            redirectUrl: `https://infidiyas.com/failure`
+            redirectUrl: process.env.FAILURE_URL
         });
     }
 });
@@ -138,7 +138,7 @@ router.post("/orders/callback/:transactionId", async (req, res) => {
 
         const responses = await Promise.all(
             requests.map(async (data) => {
-                return axios.post("https://api.sheetbest.com/sheets/3fcaf326-2cbe-4a34-810d-2f8b442f48fa", data, {
+                return axios.post(process.env.SHEET_URL, data, {
                     headers: { "Content-Type": "application/json" }
                 });
             })
@@ -149,11 +149,11 @@ router.post("/orders/callback/:transactionId", async (req, res) => {
             const userEmail = formData.email;
             const userName = formData.name;
             const subject = "Thank You for Your Purchase!";
-            const text = `Dear ${userName},\n\nThank you for your purchase! & Your transaction ID is ${transactionId}.\n\nWe Love You	&#128140;!\n\nBy,\nThe Mr.N`;
+            const text = `Dear ${userName},\n\nThank you for your purchase! Your transaction ID is ${transactionId}.\n\nWe Love You ❣️!\n\nBy,\nThe Mr.N`;
 
             await sendEmail(userEmail, subject, text);
 
-            res.status(200).json({ status: "success", redirectUrl: `https://infidiyas.com/success/${transactionId}` });
+            res.status(200).json({ status: "success", redirectUrl: `${process.env.BASE_URL}/success/${transactionId}` });
         } else {
             throw new Error("Failed to update the Excel sheet for some items.");
         }
