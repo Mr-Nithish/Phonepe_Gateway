@@ -129,16 +129,27 @@ router.post('/orders/callback/:transactionId', async (req, res) => {
     try {
         console.log('Received payment callback:', { transactionId, formData, cartProducts });
 
+        // Construct the data for the Excel sheet
+        const excelData = {
+            TransactionId: transactionId,
+            Name: formData.name,
+            Email: formData.email,
+            PhoneNumber: formData.phoneNumber,
+            Address: formData.address,
+            City: formData.city,
+            Zip: formData.zip,
+            CartProducts: JSON.stringify(cartProducts) // Convert the cart products array to a string for storage
+        };
+
+        // Send data to the Excel sheet using Sheetbest API
         const excelResponse = await axios({
             method: 'POST',
             url: 'https://api.sheetbest.com/sheets/3fcaf326-2cbe-4a34-810d-2f8b442f48fa',
             headers: { 'Content-Type': 'application/json' },
-            data: {
-                transactionId,
-                formData,
-                cartProducts
-            }
+            data: excelData
         });
+
+        console.log('Excel sheet update response:', excelResponse.data);
 
         if (excelResponse.status === 200 || excelResponse.status === 201) {
             res.status(200).json({ status: 'success', redirectUrl: 'https://infidiyas.com/success' });
@@ -151,6 +162,7 @@ router.post('/orders/callback/:transactionId', async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Failed to update the Excel sheet.' });
     }
 });
+
 
 app.use("/api/v1", router);
 
