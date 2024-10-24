@@ -30,6 +30,7 @@ function generatedTranscId() {
 
 const router = express.Router();
 
+// Payment initialization route
 router.post("/payment", async (req, res) => {
     try {
         console.log('Received payment request:', req.body);
@@ -124,7 +125,6 @@ router.post("/payment", async (req, res) => {
             status: error.response?.status
         });
 
-        // Send appropriate error response
         res.status(error.response?.status || 500).json({
             status: "error",
             message: error.response?.data?.message || error.message || "Payment initialization failed",
@@ -133,13 +133,38 @@ router.post("/payment", async (req, res) => {
     }
 });
 
-app.post('/api/v1/orders/status/:transactionId', (req, res) => {
+// Callback route after payment success
+router.post('/orders/callback/:transactionId', async (req, res) => {
     const transactionId = req.params.transactionId;
-    console.log(`Checking status for transaction ID: ${transactionId}`);
-    res.status(200).json({
-        status: "success",
-        message: `Status for transaction ID ${transactionId} retrieved successfully`
-    });
+    const { formData, cartProducts } = req.body; // Assuming you send formData and cartProducts in the callback request
+
+    try {
+        console.log(`Received payment callback for transaction ID: ${transactionId}`);
+
+        // Send data to the Excel sheet using Sheetbest API
+        const excelResponse = await axios({
+            method: 'POST',
+            url: 'https://api.sheetbest.com/sheets/3fcaf326-2cbe-4a34-810d-2f8b442f48fa',
+            headers: { 'Content-Type': 'application/json' },
+            data: {
+                transactionId,
+                formData,
+                cartProducts
+            }
+        });
+
+        console.log('Excel sheet update response:', excelResponse.data);
+
+        if (excelResponse.status === 200 || excelResponse.status === 201) {
+            res.status(200).json({ status: 'success', redirectUrl: 'http://localhost:5173/success' });
+        } else {
+            throw new Error('Failed to update the Excel sheet');
+        }
+
+    } catch (error) {
+        console.error('Error updating Excel sheet:', error);
+        res.status(500).json({ status: 'error', message: 'Failed to update the Excel sheet.' });
+    }
 });
 
 app.use("/api/v1", router);
