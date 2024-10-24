@@ -136,10 +136,17 @@ router.post("/payment", async (req, res) => {
 // Callback route after payment success
 router.post('/orders/callback/:transactionId', async (req, res) => {
     const transactionId = req.params.transactionId;
-    const { formData, cartProducts } = req.body; // Assuming you send formData and cartProducts in the callback request
+    const { formData, cartProducts } = req.body;
 
     try {
         console.log(`Received payment callback for transaction ID: ${transactionId}`);
+        console.log('Received formData:', formData);
+        console.log('Received cartProducts:', cartProducts);
+
+        // Check if data is present
+        if (!formData || !cartProducts) {
+            return res.status(400).json({ status: 'error', message: 'Required data missing from request.' });
+        }
 
         // Send data to the Excel sheet using Sheetbest API
         const excelResponse = await axios({
@@ -148,15 +155,15 @@ router.post('/orders/callback/:transactionId', async (req, res) => {
             headers: { 'Content-Type': 'application/json' },
             data: {
                 transactionId,
-                formData,
-                cartProducts
+                formData: JSON.stringify(formData), // Convert to string if necessary
+                cartProducts: JSON.stringify(cartProducts) // Convert to string if necessary
             }
         });
 
         console.log('Excel sheet update response:', excelResponse.data);
 
         if (excelResponse.status === 200 || excelResponse.status === 201) {
-            res.status(200).json({ status: 'success', redirectUrl: 'http://localhost:5173/success' });
+            res.status(200).json({ status: 'success', redirectUrl: 'https://infidiyas.com/success' });
         } else {
             throw new Error('Failed to update the Excel sheet');
         }
@@ -168,6 +175,7 @@ router.post('/orders/callback/:transactionId', async (req, res) => {
 });
 
 app.use("/api/v1", router);
+
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
