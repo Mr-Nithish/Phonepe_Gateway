@@ -83,9 +83,11 @@ router.post("/payment", async (req, res) => {
 
         let redirectUrl;
         if (response.data.data) {
-            const decodedData = Buffer.from(response.data.data, "base64").toString();
-            const parsedData = JSON.parse(decodedData);
-            redirectUrl = parsedData.redirectInfo?.url || parsedData.redirectUrl;
+            const { instrumentResponse } = response.data.data; // Destructure to get instrumentResponse
+            // Check if redirectInfo exists and is an object
+            if (instrumentResponse && instrumentResponse.redirectInfo) {
+                redirectUrl = instrumentResponse.redirectInfo.url; // Access the URL from redirectInfo
+            }
         }
 
         if (!redirectUrl) {
@@ -109,6 +111,7 @@ router.post("/payment", async (req, res) => {
         });
     }
 });
+
 
 router.post("/orders/callback/:transactionId", async (req, res) => {
     const transactionId = req.params.transactionId;
