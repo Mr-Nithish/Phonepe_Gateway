@@ -47,7 +47,7 @@ router.post("/payment", async (req, res) => {
             merchantTransactionId: transactionId,
             merchantUserId: "MUID" + transactionId,
             amount: price * 100,
-            redirectUrl: `https://infidiyas.com/success`,
+            redirectUrl: `https://infidiyas.com/success/api/v1/orders/status/${transactionId}`,
             redirectMode: "POST",
             callbackUrl: `https://infidiyas.com/api/v1/orders/callback/${transactionId}`,
             paymentInstrument: {
