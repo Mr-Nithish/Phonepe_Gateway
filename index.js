@@ -1,56 +1,47 @@
 const express = require("express");
 const axios = require("axios");
 const CryptoJS = require("crypto-js");
-const cors = require('cors');
+const cors = require("cors");
 const app = express();
 
-// Enhanced CORS configuration
 app.use(cors({
-    origin: ['https://infidiyas.com'],
-    methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'X-VERIFY', 'X-MERCHANT-ID'],
+    origin: ["https://infidiyas.com"],
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "X-VERIFY", "X-MERCHANT-ID"],
     credentials: true
 }));
 
 app.use(express.json());
 
-// Error handling middleware
 app.use((err, req, res, next) => {
-    console.error('Global error:', err);
+    console.error("Global error:", err);
     res.status(500).json({
         status: "error",
         message: err.message || "Internal server error",
-        error: process.env.NODE_ENV === 'development' ? err : {}
+        error: process.env.NODE_ENV === "development" ? err : {}
     });
 });
 
-function generatedTranscId() {
-    return 'T' + Date.now();
-}
-
 const router = express.Router();
+
+function generateTranscId() {
+    return "T" + Date.now();
+}
 
 router.post("/payment", async (req, res) => {
     try {
-        console.log('Received payment request:', req.body);
+        console.log("Received payment request:", req.body);
 
         if (!req.body.price) {
-            return res.status(400).json({
-                status: "error",
-                message: "Price is required"
-            });
+            return res.status(400).json({ status: "error", message: "Price is required" });
         }
 
         const price = parseFloat(req.body.price);
         if (isNaN(price) || price <= 0) {
-            return res.status(400).json({
-                status: "error",
-                message: "Invalid price value"
-            });
+            return res.status(400).json({ status: "error", message: "Invalid price value" });
         }
 
-        const transactionId = generatedTranscId();
-
+        const transactionId = generateTranscId();
         const data = {
             merchantId: "M225CKRAZD7WR",
             merchantTransactionId: transactionId,
@@ -80,27 +71,25 @@ router.post("/payment", async (req, res) => {
                 "Content-Type": "application/json",
                 "X-VERIFY": checksum
             },
-            data: {
-                request: payloadMain
-            },
+            data: { request: payloadMain },
             timeout: 10000
         });
 
+        console.log("Payment API response:", response.data);
+
         if (!response.data || response.data.success !== true) {
-            throw new Error('Payment initialization failed: ' + JSON.stringify(response.data));
+            throw new Error("Payment initialization failed: " + JSON.stringify(response.data));
         }
 
         let redirectUrl;
-        if (response.data.data && typeof response.data.data === 'string') {
-            const decodedData = Buffer.from(response.data.data, 'base64').toString();
+        if (response.data.data) {
+            const decodedData = Buffer.from(response.data.data, "base64").toString();
             const parsedData = JSON.parse(decodedData);
             redirectUrl = parsedData.redirectInfo?.url || parsedData.redirectUrl;
-        } else if (response.data.data && response.data.data.instrumentResponse) {
-            redirectUrl = response.data.data.instrumentResponse.redirectInfo.url;
         }
 
         if (!redirectUrl) {
-            throw new Error('No redirect URL found in response');
+            throw new Error("No redirect URL found in response");
         }
 
         res.status(200).json({
@@ -113,7 +102,7 @@ router.post("/payment", async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Payment processing error:', error);
+        console.error("Payment processing error:", error);
         res.status(error.response?.status || 500).json({
             status: "error",
             message: error.message || "Payment initialization failed"
@@ -122,14 +111,13 @@ router.post("/payment", async (req, res) => {
 });
 
 // Callback route after payment success
-router.post('/orders/callback/:transactionId', async (req, res) => {
+router.post("/orders/callback/:transactionId", async (req, res) => {
     const transactionId = req.params.transactionId;
     const { formData, cartProducts } = req.body;
 
     try {
-        console.log('Received payment callback:', { transactionId, formData, cartProducts });
+        console.log("Received payment callback:", { transactionId, formData, cartProducts });
 
-        // Construct the data for the Excel sheet
         const excelData = {
             TransactionId: transactionId,
             Name: formData.name,
@@ -138,31 +126,29 @@ router.post('/orders/callback/:transactionId', async (req, res) => {
             Address: formData.address,
             City: formData.city,
             Zip: formData.zip,
-            CartProducts: JSON.stringify(cartProducts) // Convert the cart products array to a string for storage
+            CartProducts: JSON.stringify(cartProducts)
         };
 
-        // Send data to the Excel sheet using Sheetbest API
         const excelResponse = await axios({
-            method: 'POST',
-            url: 'https://api.sheetbest.com/sheets/3fcaf326-2cbe-4a34-810d-2f8b442f48fa',
-            headers: { 'Content-Type': 'application/json' },
+            method: "POST",
+            url: "https://api.sheetbest.com/sheets/3fcaf326-2cbe-4a34-810d-2f8b442f48fa",
+            headers: { "Content-Type": "application/json" },
             data: excelData
         });
 
-        console.log('Excel sheet update response:', excelResponse.data);
+        console.log("Excel sheet update response:", excelResponse.data);
 
         if (excelResponse.status === 200 || excelResponse.status === 201) {
-            res.status(200).json({ status: 'success', redirectUrl: 'https://infidiyas.com/success' });
+            res.status(200).json({ status: "success", redirectUrl: "https://infidiyas.com/success" });
         } else {
-            throw new Error('Failed to update the Excel sheet');
+            throw new Error("Failed to update the Excel sheet");
         }
 
     } catch (error) {
-        console.error('Error updating Excel sheet:', error);
-        res.status(500).json({ status: 'error', message: 'Failed to update the Excel sheet.' });
+        console.error("Error updating Excel sheet:", error);
+        res.status(500).json({ status: "error", message: "Failed to update the Excel sheet." });
     }
 });
-
 
 app.use("/api/v1", router);
 
