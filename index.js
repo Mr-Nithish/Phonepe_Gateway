@@ -110,7 +110,6 @@ router.post("/payment", async (req, res) => {
     }
 });
 
-// Callback route after payment success
 router.post("/orders/callback/:transactionId", async (req, res) => {
     const transactionId = req.params.transactionId;
     const { formData, cartProducts } = req.body;
@@ -118,30 +117,36 @@ router.post("/orders/callback/:transactionId", async (req, res) => {
     try {
         console.log("Received payment callback:", { transactionId, formData, cartProducts });
 
-        const excelData = {
-            TransactionId: transactionId,
-            Name: formData.name,
-            Email: formData.email,
-            PhoneNumber: formData.phoneNumber,
-            Address: formData.address,
-            City: formData.city,
-            Zip: formData.zip,
-            CartProducts: JSON.stringify(cartProducts)
-        };
-
-        const excelResponse = await axios({
-            method: "POST",
-            url: "https://api.sheetbest.com/sheets/3fcaf326-2cbe-4a34-810d-2f8b442f48fa",
-            headers: { "Content-Type": "application/json" },
-            data: excelData
+        // Prepare an array of data for each cart item to be added to the Excel sheet
+        const requests = cartProducts.map(cartItem => {
+            return {
+                TransactionId: transactionId,
+                Name: formData.name,
+                Email: formData.email,
+                PhoneNumber: formData.phoneNumber,
+                Address: formData.address,
+                City: formData.city,
+                Zip: formData.zip,
+                ProductId: cartItem.productId,
+                Quantity: cartItem.quantity
+            };
         });
 
-        console.log("Excel sheet update response:", excelResponse.data);
+        // Send data for each cart item to the Sheetbest API
+        const responses = await Promise.all(
+            requests.map(async (data) => {
+                return axios.post("https://api.sheetbest.com/sheets/3fcaf326-2cbe-4a34-810d-2f8b442f48fa", data, {
+                    headers: { "Content-Type": "application/json" }
+                });
+            })
+        );
 
-        if (excelResponse.status === 200 || excelResponse.status === 201) {
+        // Check if all the responses were successful
+        const allSuccessful = responses.every(response => response.status === 200 || response.status === 201);
+        if (allSuccessful) {
             res.status(200).json({ status: "success", redirectUrl: "https://infidiyas.com/success" });
         } else {
-            throw new Error("Failed to update the Excel sheet");
+            throw new Error("Failed to update the Excel sheet for some items.");
         }
 
     } catch (error) {
@@ -149,6 +154,7 @@ router.post("/orders/callback/:transactionId", async (req, res) => {
         res.status(500).json({ status: "error", message: "Failed to update the Excel sheet." });
     }
 });
+
 
 app.use("/api/v1", router);
 
