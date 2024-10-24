@@ -47,7 +47,7 @@ router.post("/payment", async (req, res) => {
             merchantTransactionId: transactionId,
             merchantUserId: "MUID" + transactionId,
             amount: price * 100,
-            redirectUrl: `https://infidiyas.com/success`,
+            redirectUrl: `https://infidiyas.com/success/${transactionId}`,
             redirectMode: "POST",
             callbackUrl: `https://infidiyas.com/api/v1/orders/callback/${transactionId}`,
             paymentInstrument: {
@@ -83,10 +83,9 @@ router.post("/payment", async (req, res) => {
 
         let redirectUrl;
         if (response.data.data) {
-            const { instrumentResponse } = response.data.data; // Destructure to get instrumentResponse
-            // Check if redirectInfo exists and is an object
+            const { instrumentResponse } = response.data.data;
             if (instrumentResponse && instrumentResponse.redirectInfo) {
-                redirectUrl = instrumentResponse.redirectInfo.url; // Access the URL from redirectInfo
+                redirectUrl = instrumentResponse.redirectInfo.url;
             }
         }
 
@@ -147,7 +146,7 @@ router.post("/orders/callback/:transactionId", async (req, res) => {
         // Check if all the responses were successful
         const allSuccessful = responses.every(response => response.status === 200 || response.status === 201);
         if (allSuccessful) {
-            res.status(200).json({ status: "success", redirectUrl: "https://infidiyas.com/success" });
+            res.status(200).json({ status: "success", redirectUrl: `https://infidiyas.com/success/${transactionId}` });
         } else {
             throw new Error("Failed to update the Excel sheet for some items.");
         }
