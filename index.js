@@ -33,13 +33,12 @@ function generateTranscId() {
 async function checkPaymentStatus(transactionId) {
     const merchantId = process.env.MERCHANT_ID;
     const keyIndex = process.env.KEY_INDEX;
-    const statusUrl = process.env.PAYMENT_STATUS_URL
     const string = `/pg/v1/status/${merchantId}/${transactionId}` + process.env.KEY;
     const sha256 = CryptoJS.SHA256(string).toString();
     const checksum = sha256 + "###" + keyIndex;
     const options = {
         method: 'GET',
-        url: `${statusUrl}/${merchantId}/${transactionId}`,
+        url: `${process.env.PAYMENT_STATUS_URL}/${merchantId}/${transactionId}`,
         headers: {
             accept: 'application/json',
             'Content-Type': 'application/json',
@@ -47,6 +46,7 @@ async function checkPaymentStatus(transactionId) {
             'X-MERCHANT-ID': merchantId
         }
     };
+    
 
     try {
         const response = await axios.request(options);
