@@ -143,6 +143,7 @@ router.post("/payment", async (req, res) => {
 
 router.post("/orders/callback/:transactionId", async (req, res) => {
     const transactionId = req.params.transactionId;
+    console.log("Incoming request data:", req.body);
     const { formData, cartProducts } = req.body;
 
     try {
