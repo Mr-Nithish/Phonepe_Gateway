@@ -40,7 +40,7 @@ router.post("/payment", async (req, res) => {
             merchantTransactionId: transactionId,
             merchantUserId: "MUID" + transactionId,
             amount: price * 100,
-            redirectUrl: `https://phonepe-gateway.onrender.com/api/v1/payment/verify/${transactionId}`,
+            redirectUrl: `https://infidiyas.com/api/v1/payment/verify/${transactionId}`,
             redirectMode: "POST",
             paymentInstrument: {
                 type: "PAY_PAGE"
