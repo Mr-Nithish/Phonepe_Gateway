@@ -142,35 +142,50 @@ router.post("/orders/callback/:transactionId", async (req, res) => {
     try {
         console.log("Received payment callback:", { transactionId, formData, cartProducts });
 
-        // Check payment status first
-        const statusResponse = await axios.get(`https://api.phonepe.com/apis/hermes/pg/v1/status/${process.env.MERCHANT_ID}/${transactionId}`, {
+        // Check if formData and cartProducts are present
+        if (!formData || !cartProducts) {
+            console.error("Invalid callback data:", { formData, cartProducts });
+            return res.status(400).json({ status: "error", message: "Invalid callback data" });
+        }
+
+        // Calculate the checksum for the payment status verification
+        const merchantId = process.env.MERCHANT_ID;
+        const keyIndex = process.env.KEY_INDEX;
+        const key = process.env.KEY;
+        const stringToHash = `/pg/v1/status/${merchantId}/${transactionId}` + key;
+        const sha256 = CryptoJS.SHA256(stringToHash).toString();
+        const checksum = sha256 + "###" + keyIndex;
+
+        // Verify the payment status
+        const statusResponse = await axios.get(`https://api.phonepe.com/apis/hermes/pg/v1/status/${merchantId}/${transactionId}`, {
             headers: {
                 accept: 'application/json',
                 'Content-Type': 'application/json',
-                'X-VERIFY': checksum,  // Ensure to calculate the checksum as done in your /status/:transactionId route
-                'X-MERCHANT-ID': process.env.MERCHANT_ID
+                'X-VERIFY': checksum,
+                'X-MERCHANT-ID': merchantId
             }
         });
 
+        console.log("Payment status response:", statusResponse.data);
+
         if (statusResponse.data.success !== true) {
-            return res.status(400).json({ status: "error", message: "Payment not successful." });
+            console.error("Payment verification failed:", statusResponse.data);
+            return res.status(400).json({ status: "error", message: "Payment not successful" });
         }
 
-        // Process callback only if payment is successful
-        const requests = cartProducts.map(cartItem => {
-            return {
-                TransactionId: transactionId,
-                Name: formData.name,
-                Email: formData.email,
-                PhoneNumber: formData.phoneNumber,
-                Address: formData.address,
-                City: formData.city,
-                Zip: formData.zip,
-                ProductId: cartItem.productId,
-                ProductName: cartItem.productName,
-                Quantity: cartItem.quantity
-            };
-        });
+        // Proceed with processing the callback
+        const requests = cartProducts.map(cartItem => ({
+            TransactionId: transactionId,
+            Name: formData.name,
+            Email: formData.email,
+            PhoneNumber: formData.phoneNumber,
+            Address: formData.address,
+            City: formData.city,
+            Zip: formData.zip,
+            ProductId: cartItem.productId,
+            ProductName: cartItem.productName,
+            Quantity: cartItem.quantity
+        }));
 
         const responses = await Promise.all(
             requests.map(async (data) => {
