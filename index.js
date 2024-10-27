@@ -3,7 +3,7 @@ const axios = require("axios");
 const CryptoJS = require("crypto-js");
 const cors = require("cors");
 const { sendEmail } = require('./mailer');
-require('dotenv').config()
+require('dotenv').config();
 const app = express();
 
 app.use(cors({
@@ -28,6 +28,32 @@ const router = express.Router();
 
 function generateTranscId() {
     return "T" + Date.now();
+}
+
+async function checkPaymentStatus(transactionId) {
+    const merchantId = process.env.MERCHANT_ID;
+    const keyIndex = process.env.KEY_INDEX;
+    const string = `/pg/v1/status/${merchantId}/${transactionId}` + process.env.KEY;
+    const sha256 = CryptoJS.SHA256(string).toString();
+    const checksum = sha256 + "###" + keyIndex;
+    const options = {
+        method: 'GET',
+        url: `${process.env.PAYMENT_STATUS_URL}/${merchantId}/${transactionId}`,
+        headers: {
+            accept: 'application/json',
+            'Content-Type': 'application/json',
+            'X-VERIFY': checksum,
+            'X-MERCHANT-ID': merchantId
+        }
+    };
+
+    try {
+        const response = await axios.request(options);
+        return response.data;
+    } catch (error) {
+        console.error("Error checking payment status:", error);
+        throw new Error("Failed to check payment status.");
+    }
 }
 
 router.post("/payment", async (req, res) => {
@@ -67,7 +93,7 @@ router.post("/payment", async (req, res) => {
 
         const response = await axios({
             method: "POST",
-            url: process.env.PORD_URL,
+            url: process.env.POD_URL,
             headers: {
                 accept: "application/json",
                 "Content-Type": "application/json",
@@ -119,7 +145,24 @@ router.post("/orders/callback/:transactionId", async (req, res) => {
     const { formData, cartProducts } = req.body;
 
     try {
-        console.log("Received payment callback:", { transactionId, formData, cartProducts });
+        console.log("Checking payment status for transaction:", transactionId);
+
+        // Keep checking payment status until resolved
+        let paymentStatus;
+        do {
+            const statusResponse = await checkPaymentStatus(transactionId);
+            paymentStatus = statusResponse.data.status; // Assuming `status` contains payment status
+            if (paymentStatus === "PENDING") {
+                console.log("Payment is pending. Retrying...");
+                await new Promise(resolve => setTimeout(resolve, 5000)); // Wait for 5 seconds before retrying
+            }
+        } while (paymentStatus === "PENDING");
+
+        if (paymentStatus !== "SUCCESS") {
+            return res.status(400).json({ status: "error", message: "Payment failed", redirectUrl: process.env.FAILURE_URL });
+        }
+
+        console.log("Payment successful. Processing callback...");
 
         const requests = cartProducts.map(cartItem => {
             return {
@@ -159,8 +202,8 @@ router.post("/orders/callback/:transactionId", async (req, res) => {
         }
 
     } catch (error) {
-        console.error("Error updating Excel sheet:", error);
-        res.status(500).json({ status: "error", message: "Failed to update the Excel sheet." });
+        console.error("Error processing callback:", error);
+        res.status(500).json({ status: "error", message: "Failed to process the callback." });
     }
 });
 
