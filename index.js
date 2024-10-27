@@ -145,16 +145,22 @@ router.post("/orders/callback/:transactionId", async (req, res) => {
     const { formData, cartProducts } = req.body;
 
     try {
-        console.log("Checking payment status for transaction:", transactionId);
+        console.log("Callback initiated for transaction:", transactionId);
+        console.log("Request data:", { formData, cartProducts });
 
-        // Keep checking payment status until resolved
+        if (!formData || !cartProducts) {
+            return res.status(400).json({ status: "error", message: "Missing required data." });
+        }
+
+        // Poll for payment status
         let paymentStatus;
         do {
             const statusResponse = await checkPaymentStatus(transactionId);
-            paymentStatus = statusResponse.data.status; // Assuming `status` contains payment status
+            paymentStatus = statusResponse.data.status;
+            console.log("Current payment status:", paymentStatus);
             if (paymentStatus === "PENDING") {
-                console.log("Payment is pending. Retrying...");
-                await new Promise(resolve => setTimeout(resolve, 5000)); // Wait for 5 seconds before retrying
+                console.log("Payment pending. Retrying in 5 seconds...");
+                await new Promise(resolve => setTimeout(resolve, 5000));
             }
         } while (paymentStatus === "PENDING");
 
@@ -162,50 +168,37 @@ router.post("/orders/callback/:transactionId", async (req, res) => {
             return res.status(400).json({ status: "error", message: "Payment failed", redirectUrl: process.env.FAILURE_URL });
         }
 
-        console.log("Payment successful. Processing callback...");
+        console.log("Payment successful. Processing order update...");
 
-        const requests = cartProducts.map(cartItem => {
-            return {
-                TransactionId: transactionId,
-                Name: formData.name,
-                Email: formData.email,
-                PhoneNumber: formData.phoneNumber,
-                Address: formData.address,
-                City: formData.city,
-                Zip: formData.zip,
-                ProductId: cartItem.productId,
-                ProductName: cartItem.productName,
-                Quantity: cartItem.quantity
-            };
-        });
-
+        // Update Excel sheet
         const responses = await Promise.all(
             requests.map(async (data) => {
-                return axios.post(process.env.SHEET_URL, data, {
-                    headers: { "Content-Type": "application/json" }
-                });
+                try {
+                    const response = await axios.post(process.env.SHEET_URL, data, {
+                        headers: { "Content-Type": "application/json" }
+                    });
+                    return response;
+                } catch (error) {
+                    console.error("Error updating Excel sheet for item:", data, error.message);
+                    throw error;
+                }
             })
         );
 
         const allSuccessful = responses.every(response => response.status === 200 || response.status === 201);
         if (allSuccessful) {
-            const userEmail = formData.email;
-            const userName = formData.name;
-            const subject = "Thank You for Your Purchase!";
-            const text = `Dear ${userName},\n\nThank you for your purchase! Your transaction ID is ${transactionId}.\n\nWe Love You ❣️!\n\nBy,\nThe Mr.N`;
-
-            await sendEmail(userEmail, subject, text);
-
+            await sendEmail(formData.email, "Thank You for Your Purchase!", `Dear ${formData.name},\n\nThank you for your purchase!`);
             res.status(200).json({ status: "success", redirectUrl: `${process.env.BASE_URL}/success/${transactionId}` });
         } else {
-            throw new Error("Failed to update the Excel sheet for some items.");
+            throw new Error("Some items failed to update.");
         }
 
     } catch (error) {
-        console.error("Error processing callback:", error);
-        res.status(500).json({ status: "error", message: "Failed to process the callback." });
+        console.error("Error in callback:", error);
+        res.status(500).json({ status: "error", message: "Internal server error while processing callback." });
     }
 });
+
 
 app.use("/api/v1", router);
 
