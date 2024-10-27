@@ -40,7 +40,7 @@ router.post("/payment", async (req, res) => {
             merchantTransactionId: transactionId,
             merchantUserId: "MUID" + transactionId,
             amount: price * 100,
-            redirectUrl: `https://infidiyas.com/api/v1/payment/verify/${transactionId}`,
+            redirectUrl: `https://infidiyas.com/success/${transactionId}`,
             redirectMode: "POST",
             paymentInstrument: {
                 type: "PAY_PAGE"
@@ -118,6 +118,7 @@ router.post("/payment/verify/:transactionId", async (req, res) => {
         const sha256 = CryptoJS.SHA256(stringToHash).toString();
         const checksum = sha256 + "###" + keyIndex;
 
+        // Verify payment status
         const statusResponse = await axios.get(`https://api.phonepe.com/apis/hermes/pg/v1/status/${merchantId}/${transactionId}`, {
             headers: {
                 accept: 'application/json',
@@ -133,7 +134,20 @@ router.post("/payment/verify/:transactionId", async (req, res) => {
             return res.redirect(`${process.env.BASE_URL}/failure`);
         }
 
-        res.redirect(`${process.env.BASE_URL}/success/${transactionId}`);
+        // If payment verification is successful, send the callback data
+        const pendingData = req.body; // Get pending data from the request
+        try {
+            await axios.post(`https://phonepe-gateway.onrender.com/api/v1/orders/callback/${transactionId}`, pendingData, {
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            // Redirect to the success page after callback
+            res.redirect(`${process.env.BASE_URL}/success/${transactionId}`);
+        } catch (callbackError) {
+            console.error("Callback request failed:", callbackError);
+            res.redirect(`${process.env.BASE_URL}/failure`);
+        }
+
     } catch (error) {
         console.error("Error verifying payment:", error);
         res.redirect(`${process.env.BASE_URL}/failure`);
