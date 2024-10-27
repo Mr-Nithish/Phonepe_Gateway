@@ -40,7 +40,7 @@ router.post("/payment", async (req, res) => {
             merchantTransactionId: transactionId,
             merchantUserId: "MUID" + transactionId,
             amount: price * 100,
-            redirectUrl: `${process.env.BASE_URL}/api/v1/payment/verify/${transactionId}`, // Verification endpoint
+            redirectUrl: `https://phonepe-gateway.onrender.com/api/v1/payment/verify/${transactionId}`, // Verification endpoint
             redirectMode: "POST",
             paymentInstrument: {
                 type: "PAY_PAGE"
