@@ -57,7 +57,7 @@ router.post("/payment", async (req, res) => {
 
         const response = await axios({
             method: "POST",
-            url: process.env.PORD_URL,
+            url: process.env.POD_URL,
             headers: {
                 accept: "application/json",
                 "Content-Type": "application/json",
@@ -103,6 +103,10 @@ router.post("/payment", async (req, res) => {
         });
     }
 });
+
+// router.post("/status/:transactionId" async (req, res) => {
+//     const transactionId = req.params['transactionId']
+// })
 
 router.post("/orders/callback/:transactionId", async (req, res) => {
     const transactionId = req.params.transactionId;
