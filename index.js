@@ -104,8 +104,35 @@ router.post("/payment", async (req, res) => {
     }
 });
 
-// router.post("/status/:transactionId" async (req, res) => {
-//     const transactionId = req.params['transactionId']
+// router.post("/status/:transactionId", async (req, res) => {
+//     const transactionId = req.params['transactionId'];
+//     const merchantId= process.env.MERCHANT_ID;
+//     const keyIndex = process.env.KEY_INDEX;
+//     const string = `/pg/v1/status/${merchantId}/${transactionId}` + process.env.KEY;
+//     const sha256 = crypto.createHash('sha256').update(string).digest('hex');
+//     const checksum = sha256 + "###" + keyIndex;
+//     const options = {
+//         method: 'GET',
+//         url: `https://api.phonepe.com/apis/hermes/pg/v1/status/${merchantId}/${transactionId}`,
+//         headers: {
+//         accept: 'application/json',
+//         'Content-Type': 'application/json',
+//         'X-VERIFY': checksum,
+//         'X-MERCHANT-ID': `${merchantId}`
+//         }
+//     };
+//     axios.request(options).then(async(response) => {
+//     if (response.data.success === true) {
+//     console.log(response.data)
+//     return res.status(200).send({success: true, message:"Payment Success"});
+//     } else {
+//     return res.status(400).send({success: false, message:"Payment Failure"});
+//     }
+//     })
+//     .catch((err) => {
+//     console.error(err);
+//     res.status(500).send({msg: err.message});
+//     });
 // })
 
 router.post("/orders/callback/:transactionId", async (req, res) => {
@@ -115,6 +142,21 @@ router.post("/orders/callback/:transactionId", async (req, res) => {
     try {
         console.log("Received payment callback:", { transactionId, formData, cartProducts });
 
+        // Check payment status first
+        const statusResponse = await axios.get(`https://api.phonepe.com/apis/hermes/pg/v1/status/${process.env.MERCHANT_ID}/${transactionId}`, {
+            headers: {
+                accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-VERIFY': checksum,  // Ensure to calculate the checksum as done in your /status/:transactionId route
+                'X-MERCHANT-ID': process.env.MERCHANT_ID
+            }
+        });
+
+        if (statusResponse.data.success !== true) {
+            return res.status(400).json({ status: "error", message: "Payment not successful." });
+        }
+
+        // Process callback only if payment is successful
         const requests = cartProducts.map(cartItem => {
             return {
                 TransactionId: transactionId,
@@ -147,13 +189,13 @@ router.post("/orders/callback/:transactionId", async (req, res) => {
 
             await sendEmail(userEmail, subject, text);
 
-            res.status(200).json({ status: "success", redirectUrl: `${process.env.BASE_URL}/success/${transactionId}`});
+            res.status(200).json({ status: "success", redirectUrl: `${process.env.BASE_URL}/success/${transactionId}` });
         } else {
             throw new Error("Failed to update the Excel sheet for some items.");
         }
     } catch (error) {
-        console.error("Error updating Excel sheet:", error);
-        res.status(500).json({ status: "error", message: "Failed to update the Excel sheet." });
+        console.error("Error processing payment callback:", error);
+        res.status(500).json({ status: "error", message: "Failed to process the payment callback." });
     }
 });
 
