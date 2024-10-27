@@ -3,7 +3,7 @@ const axios = require("axios");
 const CryptoJS = require("crypto-js");
 const cors = require("cors");
 const { sendEmail } = require('./mailer');
-require('dotenv').config()
+require('dotenv').config();
 const app = express();
 
 app.use(cors({
@@ -40,7 +40,7 @@ router.post("/payment", async (req, res) => {
             merchantTransactionId: transactionId,
             merchantUserId: "MUID" + transactionId,
             amount: price * 100,
-            redirectUrl: `https://phonepe-gateway.onrender.com/api/v1/payment/verify/:${transactionId}`, // Verification endpoint
+            redirectUrl: `https://phonepe-gateway.onrender.com/api/v1/payment/verify/${transactionId}`,
             redirectMode: "POST",
             paymentInstrument: {
                 type: "PAY_PAGE"
@@ -118,13 +118,12 @@ router.post("/payment/verify/:transactionId", async (req, res) => {
         const sha256 = CryptoJS.SHA256(stringToHash).toString();
         const checksum = sha256 + "###" + keyIndex;
 
-        // Verify the payment status
         const statusResponse = await axios.get(`https://api.phonepe.com/apis/hermes/pg/v1/status/${merchantId}/${transactionId}`, {
             headers: {
                 accept: 'application/json',
                 'Content-Type': 'application/json',
                 'X-VERIFY': checksum,
-                'X-MERCHANT-ID': merchantId
+                'X-MERCHANT-ID': `${merchantId}`
             }
         });
 
@@ -134,7 +133,6 @@ router.post("/payment/verify/:transactionId", async (req, res) => {
             return res.redirect(`${process.env.BASE_URL}/failure`);
         }
 
-        // Payment successful, redirect to the success URL
         res.redirect(`${process.env.BASE_URL}/success/${transactionId}`);
     } catch (error) {
         console.error("Error verifying payment:", error);
