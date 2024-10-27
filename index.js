@@ -15,47 +15,12 @@ app.use(cors({
 
 app.use(express.json());
 
-app.use((err, req, res, next) => {
-    console.error("Global error:", err);
-    res.status(500).json({
-        status: "error",
-        message: err.message || "Internal server error",
-        error: process.env.NODE_ENV === "development" ? err : {}
-    });
-});
-
 const router = express.Router();
 
 function generateTranscId() {
     return "T" + Date.now();
 }
 
-async function checkPaymentStatus(transactionId) {
-    const merchantId = process.env.MERCHANT_ID;
-    const keyIndex = process.env.KEY_INDEX;
-    const string = `/pg/v1/status/${merchantId}/${transactionId}` + process.env.KEY;
-    const sha256 = CryptoJS.SHA256(string).toString();
-    const checksum = sha256 + "###" + keyIndex;
-    const options = {
-        method: 'GET',
-        url: `${process.env.PAYMENT_STATUS_URL}/${merchantId}/${transactionId}`,
-        headers: {
-            accept: 'application/json',
-            'Content-Type': 'application/json',
-            'X-VERIFY': checksum,
-            'X-MERCHANT-ID': merchantId
-        }
-    };
-    
-
-    try {
-        const response = await axios.request(options);
-        return response.data;
-    } catch (error) {
-        console.error("Error checking payment status:", error);
-        throw new Error("Failed to check payment status.");
-    }
-}
 
 router.post("/payment", async (req, res) => {
     try {
@@ -76,7 +41,7 @@ router.post("/payment", async (req, res) => {
             merchantTransactionId: transactionId,
             merchantUserId: "MUID" + transactionId,
             amount: price * 100,
-            redirectUrl: `${process.env.BASE_URL}/success/${transactionId}`,
+            redirectUrl: `http://localhost:3001/api/v1/status/${transactionId}`,
             redirectMode: "POST",
             callbackUrl: `${process.env.BASE_URL}/api/v1/orders/callback/${transactionId}`,
             paymentInstrument: {
@@ -154,7 +119,6 @@ router.post("/orders/callback/:transactionId", async (req, res) => {
             return res.status(400).json({ status: "error", message: "Missing required data." });
         }
 
-        // Poll for payment status
         let paymentStatus;
         do {
             const statusResponse = await checkPaymentStatus(transactionId);
@@ -172,7 +136,6 @@ router.post("/orders/callback/:transactionId", async (req, res) => {
 
         console.log("Payment successful. Processing order update...");
 
-        // Update Excel sheet
         const responses = await Promise.all(
             requests.map(async (data) => {
                 try {
