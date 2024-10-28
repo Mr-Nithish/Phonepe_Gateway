@@ -21,7 +21,6 @@ function generateTranscId() {
     return "T" + Date.now();
 }
 
-
 router.post("/payment", async (req, res) => {
     try {
         console.log("Received payment request:", req.body);
@@ -106,24 +105,46 @@ router.post("/payment", async (req, res) => {
     }
 });
 
+async function checkPaymentStatus(transactionId) {
+    try {
+        const merchantId = process.env.MERCHANT_ID;
+        const key = process.env.KEY;
+        const keyIndex = process.env.KEY_INDEX;
+        const stringToHash = `/pg/v1/status/${merchantId}/${transactionId}` + key;
+        const sha256 = CryptoJS.SHA256(stringToHash).toString();
+        const checksum = sha256 + "###" + keyIndex;
+
+        const statusResponse = await axios.get(`https://api.phonepe.com/apis/hermes/pg/v1/status/${merchantId}/${transactionId}`, {
+            headers: {
+                accept: 'application/json',
+                'Content-Type': 'application/json',
+                'X-VERIFY': checksum,
+                'X-MERCHANT-ID': `${merchantId}`
+            }
+        });
+
+        return statusResponse;
+    } catch (error) {
+        console.error("Error checking payment status:", error.message);
+        throw new Error("Failed to check payment status");
+    }
+}
+
 router.post("/orders/callback/:transactionId", async (req, res) => {
     const transactionId = req.params.transactionId;
-    console.log("Incoming request data:", req.body);
     const { formData, cartProducts } = req.body;
 
     try {
         console.log("Callback initiated for transaction:", transactionId);
-        console.log("Request data:", { formData, cartProducts });
 
-        if (!formData || !cartProducts) {
-            return res.status(400).json({ status: "error", message: "Missing required data." });
+        if (!formData || !Array.isArray(cartProducts) || cartProducts.length === 0) {
+            return res.status(400).json({ status: "error", message: "Missing or invalid data." });
         }
 
         let paymentStatus;
         do {
             const statusResponse = await checkPaymentStatus(transactionId);
             paymentStatus = statusResponse.data.status;
-            console.log("Current payment status:", paymentStatus);
             if (paymentStatus === "PENDING") {
                 console.log("Payment pending. Retrying in 5 seconds...");
                 await new Promise(resolve => setTimeout(resolve, 5000));
@@ -131,10 +152,14 @@ router.post("/orders/callback/:transactionId", async (req, res) => {
         } while (paymentStatus === "PENDING");
 
         if (paymentStatus !== "SUCCESS") {
-            return res.status(400).json({ status: "error", message: "Payment failed", redirectUrl: process.env.FAILURE_URL });
+            return res.status(400).json({ status: "error", message: "Payment failed" });
         }
 
-        console.log("Payment successful. Processing order update...");
+        const requests = cartProducts.map(product => ({
+            productName: product.name,
+            quantity: product.quantity,
+            transactionId: transactionId
+        }));
 
         const responses = await Promise.all(
             requests.map(async (data) => {
@@ -145,27 +170,24 @@ router.post("/orders/callback/:transactionId", async (req, res) => {
                     return response;
                 } catch (error) {
                     console.error("Error updating Excel sheet for item:", data, error.message);
-                    throw error;
+                    return null; // Continue with other requests
                 }
             })
         );
 
-        const allSuccessful = responses.every(response => response.status === 200 || response.status === 201);
+        const allSuccessful = responses.every(response => response && (response.status === 200 || response.status === 201));
         if (allSuccessful) {
-            await sendEmail(formData.email, 
-                "Thank You for Your Purchase!", 
-                `Dear ${formData.name},\n\nThank you for your purchase!`);
-            res.status(200).json({ status: "success", redirectUrl: `${process.env.BASE_URL}/success/${transactionId} `});
+            await sendEmail(formData.email, "Thank You for Your Purchase!", `Dear ${formData.name},\n\nThank you for your purchase!`);
+            res.status(200).json({ status: "success", redirectUrl: `${process.env.BASE_URL}/success/${transactionId}` });
         } else {
             throw new Error("Some items failed to update.");
         }
 
     } catch (error) {
-        console.error("Error in callback:", error);
+        console.error("Error in callback:", error.stack);
         res.status(500).json({ status: "error", message: "Internal server error while processing callback." });
     }
 });
-
 
 app.use("/api/v1", router);
 
