@@ -67,7 +67,7 @@ router.post("/payment", async (req, res) => {
 
         const response = await axios({
             method: "POST",
-            url: process.env.PORD_URL,
+            url: process.env.POD_URL,
             headers: {
                 accept: "application/json",
                 "Content-Type": "application/json",
