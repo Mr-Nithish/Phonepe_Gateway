@@ -5,6 +5,7 @@ const cors = require("cors");
 const { sendEmail } = require('./mailer');
 require('dotenv').config()
 const app = express();
+app.use(express.json());
 
 app.use(cors({
     origin: ["https://infidiyas.com"],
@@ -12,17 +13,6 @@ app.use(cors({
     allowedHeaders: ["Content-Type", "X-VERIFY", "X-MERCHANT-ID"],
     credentials: true
 }));
-
-app.use(express.json());
-
-app.use((err, req, res, next) => {
-    console.error("Global error:", err);
-    res.status(500).json({
-        status: "error",
-        message: err.message || "Internal server error",
-        error: process.env.NODE_ENV === "development" ? err : {}
-    });
-});
 
 const router = express.Router();
 
@@ -116,52 +106,99 @@ router.post("/payment", async (req, res) => {
 
 router.post("/orders/callback/:transactionId", async (req, res) => {
     const transactionId = req.params.transactionId;
-    const { formData, cartProducts } = req.body;
+    const merchantId = process.env.MERCHANT_ID;
+    const keyIndex = 1;
+    const string = `/pg/v1/status/${merchantId}/${transactionId}` + process.env.KEY;
+    const sha256 = crypto.createHash('sha256').update(string).digest('hex');
+    const checksum = sha256 + "###" + keyIndex;
 
-    try {
-        console.log("Received payment callback:", { transactionId, formData, cartProducts });
-
-        const requests = cartProducts.map(cartItem => {
-            return {
-                TransactionId: transactionId,
-                Name: formData.name,
-                Email: formData.email,
-                PhoneNumber: formData.phoneNumber,
-                Address: formData.address,
-                City: formData.city,
-                Zip: formData.zip,
-                ProductId: cartItem.productId,
-                ProductName: cartItem.productName,
-                Quantity: cartItem.quantity
-            };
-        });
-
-        const responses = await Promise.all(
-            requests.map(async (data) => {
-                return axios.post(process.env.SHEET_URL, data, {
-                    headers: { "Content-Type": "application/json" }
-                });
-            })
-        );
-
-        const allSuccessful = responses.every(response => response.status === 200 || response.status === 201);
-        if (allSuccessful) {
-            const userEmail = formData.email;
-            const userName = formData.name;
-            const subject = "Thank You for Your Purchase!";
-            const text = `Dear ${userName},\n\nThank you for your purchase! Your transaction ID is ${transactionId}.\n\nWe Love You ❣!\n\nBy,\nThe Mr.N`;
-
-            await sendEmail(userEmail, subject, text);
-
-            res.status(200).json({ status: "success", redirectUrl: `${process.env.BASE_URL}/success/${transactionId}` });
-        } else {
-            throw new Error("Failed to update the Excel sheet for some items.");
+    const options = {
+        method: 'GET',
+        url: `https://api.phonepe.com/apis/hermes/pg/v1/status/${merchantId}/${transactionId}`,
+        headers: {
+            accept: 'application/json',
+            'Content-Type': 'application/json',
+            'X-VERIFY': checksum,
+            'X-MERCHANT-ID': `${merchantId}`
         }
+    };
 
-    } catch (error) {
-        console.error("Error updating Excel sheet:", error);
-        res.status(500).json({ status: "error", message: "Failed to update the Excel sheet." });
-    }
+    // CHECK PAYMENT STATUS
+    axios.request(options).then(async (response) => {
+        if (response.data.success === true) {
+            console.log("Payment success:", response.data);
+
+            // If payment is successful, proceed with updating Excel sheet and sending email
+            const { formData, cartProducts } = req.body;
+
+            try {
+                console.log("Received payment callback:", { transactionId, formData, cartProducts });
+
+                const requests = cartProducts.map(cartItem => {
+                    return {
+                        TransactionId: transactionId,
+                        Name: formData.name,
+                        Email: formData.email,
+                        PhoneNumber: formData.phoneNumber,
+                        Address: formData.address,
+                        City: formData.city,
+                        Zip: formData.zip,
+                        ProductId: cartItem.productId,
+                        ProductName: cartItem.productName,
+                        Quantity: cartItem.quantity
+                    };
+                });
+
+                // Update Excel sheet for all products in the cart
+                const responses = await Promise.all(
+                    requests.map(async (data) => {
+                        return axios.post(process.env.SHEET_URL, data, {
+                            headers: { "Content-Type": "application/json" }
+                        });
+                    })
+                );
+
+                const allSuccessful = responses.every(response => response.status === 200 || response.status === 201);
+                if (allSuccessful) {
+                    const userEmail = formData.email;
+                    const userName = formData.name;
+                    const subject = "Thank You for Your Purchase!";
+                    const text = `Dear ${userName},\n\nThank you for your purchase! Your transaction ID is ${transactionId}.\n\nWe Love You ❣!\n\nBy,\nThe Mr.N`;
+
+                    // Send confirmation email to the user
+                    await sendEmail(userEmail, subject, text);
+
+                    // Respond with success and redirect URL
+                    return res.status(200).json({
+                        status: "success",
+                        redirectUrl: `${process.env.BASE_URL}/success/${transactionId}`
+                    });
+                } else {
+                    throw new Error("Failed to update the Excel sheet for some items.");
+                }
+
+            } catch (error) {
+                console.error("Error updating Excel sheet:", error);
+                return res.status(500).json({
+                    status: "error",
+                    message: "Failed to update the Excel sheet."
+                });
+            }
+        } else {
+            // Payment failure
+            console.log("Payment failed:", response.data);
+            return res.status(400).json({
+                status: "error",
+                message: "Payment failure"
+            });
+        }
+    }).catch((err) => {
+        console.error("Error checking payment status:", err);
+        return res.status(500).json({
+            status: "error",
+            message: err.message
+        });
+    });
 });
 
 app.use("/api/v1", router);
