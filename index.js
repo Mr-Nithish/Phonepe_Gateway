@@ -9,8 +9,8 @@ app.use(express.json());
 
 app.use(cors({
     origin: ["https://infidiyas.com"],
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "X-VERIFY", "X-MERCHANT-ID"],
+    methods: ["GET", "POST", "PUT", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "X-VERIFY", "X-MERCHANT-ID", "Authorization"],
     credentials: true
 }));
 
@@ -104,7 +104,13 @@ router.post("/payment", async (req, res) => {
     }
 });
 
-router.post("/orders/callback/:transactionId", async (req, res) => {
+const corsOptions = {
+    origin: 'https://infidiyas.com',
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+};
+
+router.post("/orders/callback/:transactionId",  cors(corsOptions), async (req, res) => {
     const transactionId = req.params.transactionId;
     const merchantId = process.env.MERCHANT_ID;
     const keyIndex = 1;
