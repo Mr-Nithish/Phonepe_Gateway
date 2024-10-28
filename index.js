@@ -1,6 +1,7 @@
 const express = require("express");
 const axios = require("axios");
 const CryptoJS = require("crypto-js");
+const crypto = require('crypto');
 const cors = require("cors");
 const { sendEmail } = require('./mailer');
 require('dotenv').config()
