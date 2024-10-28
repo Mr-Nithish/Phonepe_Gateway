@@ -137,26 +137,32 @@ router.post("/orders/callback/:transactionId", async (req, res) => {
     try {
         console.log("Callback initiated for transaction:", transactionId);
 
+        // Validate incoming request data
         if (!formData || !Array.isArray(cartProducts) || cartProducts.length === 0) {
             return res.status(400).json({ status: "error", message: "Missing or invalid data." });
         }
 
+        // Check payment status
         let paymentStatus;
         do {
             const statusResponse = await checkPaymentStatus(transactionId);
             paymentStatus = statusResponse.data.status;
+
             if (paymentStatus === "PENDING") {
                 console.log("Payment pending. Retrying in 5 seconds...");
                 await new Promise(resolve => setTimeout(resolve, 5000));
             }
         } while (paymentStatus === "PENDING");
 
+        // If payment status is not "SUCCESS", return a 400 response
         if (paymentStatus !== "SUCCESS") {
+            console.error("Payment not successful for transaction:", transactionId);
             return res.status(400).json({ status: "error", message: "Payment failed" });
         }
 
+        // Proceed with processing if payment is successful
         const requests = cartProducts.map(product => ({
-            productName: product.name,
+            productName: product.productName,
             quantity: product.quantity,
             transactionId: transactionId
         }));
@@ -170,7 +176,7 @@ router.post("/orders/callback/:transactionId", async (req, res) => {
                     return response;
                 } catch (error) {
                     console.error("Error updating Excel sheet for item:", data, error.message);
-                    return null; // Continue with other requests
+                    return null;
                 }
             })
         );
