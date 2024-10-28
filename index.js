@@ -14,13 +14,14 @@ app.use(cors({
 }));
 
 app.use(express.json());
+
 const router = express.Router();
 
 function generateTranscId() {
     return "T" + Date.now();
 }
 
-// Payment Initialization Endpoint
+
 router.post("/payment", async (req, res) => {
     try {
         console.log("Received payment request:", req.body);
@@ -40,8 +41,9 @@ router.post("/payment", async (req, res) => {
             merchantTransactionId: transactionId,
             merchantUserId: "MUID" + transactionId,
             amount: price * 100,
-            redirectUrl: `https://infidiyas.com/success/${transactionId}`,
+            redirectUrl: `${process.env.BASE_URL}/success/${transactionId}`,
             redirectMode: "POST",
+            callbackUrl: `${process.env.BASE_URL}/api/v1/orders/callback/${transactionId}`,
             paymentInstrument: {
                 type: "PAY_PAGE"
             }
@@ -104,55 +106,66 @@ router.post("/payment", async (req, res) => {
     }
 });
 
-// Payment Verification Endpoint
-router.post("/payment/verify/:transactionId", async (req, res) => {
+router.post("/orders/callback/:transactionId", async (req, res) => {
     const transactionId = req.params.transactionId;
+    console.log("Incoming request data:", req.body);
+    const { formData, cartProducts } = req.body;
 
     try {
-        console.log("Verifying payment:", transactionId);
+        console.log("Callback initiated for transaction:", transactionId);
+        console.log("Request data:", { formData, cartProducts });
 
-        const merchantId = process.env.MERCHANT_ID;
-        const keyIndex = process.env.KEY_INDEX;
-        const key = process.env.KEY;
-        const stringToHash = `/pg/v1/status/${merchantId}/${transactionId}` + key;
-        const sha256 = CryptoJS.SHA256(stringToHash).toString();
-        const checksum = sha256 + "###" + keyIndex;
-
-        // Verify payment status
-        const statusResponse = await axios.get(`https://api.phonepe.com/apis/hermes/pg/v1/status/${merchantId}/${transactionId}`, {
-            headers: {
-                accept: 'application/json',
-                'Content-Type': 'application/json',
-                'X-VERIFY': checksum,
-                'X-MERCHANT-ID': `${merchantId}`
-            }
-        });
-
-        console.log("Payment status response:", statusResponse.data);
-
-        if (statusResponse.data.success !== true) {
-            return res.redirect(`${process.env.BASE_URL}/failure`);
+        if (!formData || !cartProducts) {
+            return res.status(400).json({ status: "error", message: "Missing required data." });
         }
 
-        // If payment verification is successful, send the callback data
-        const pendingData = req.body; // Get pending data from the request
-        try {
-            await axios.post(`https://phonepe-gateway.onrender.com/api/v1/orders/callback/${transactionId}`, pendingData, {
-                headers: { 'Content-Type': 'application/json' }
-            });
+        let paymentStatus;
+        do {
+            const statusResponse = await checkPaymentStatus(transactionId);
+            paymentStatus = statusResponse.data.status;
+            console.log("Current payment status:", paymentStatus);
+            if (paymentStatus === "PENDING") {
+                console.log("Payment pending. Retrying in 5 seconds...");
+                await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+        } while (paymentStatus === "PENDING");
 
-            // Redirect to the success page after callback
-            res.redirect(`${process.env.BASE_URL}/success/${transactionId}`);
-        } catch (callbackError) {
-            console.error("Callback request failed:", callbackError);
-            res.redirect(`${process.env.BASE_URL}/failure`);
+        if (paymentStatus !== "SUCCESS") {
+            return res.status(400).json({ status: "error", message: "Payment failed", redirectUrl: process.env.FAILURE_URL });
+        }
+
+        console.log("Payment successful. Processing order update...");
+
+        const responses = await Promise.all(
+            requests.map(async (data) => {
+                try {
+                    const response = await axios.post(process.env.SHEET_URL, data, {
+                        headers: { "Content-Type": "application/json" }
+                    });
+                    return response;
+                } catch (error) {
+                    console.error("Error updating Excel sheet for item:", data, error.message);
+                    throw error;
+                }
+            })
+        );
+
+        const allSuccessful = responses.every(response => response.status === 200 || response.status === 201);
+        if (allSuccessful) {
+            await sendEmail(formData.email, 
+                "Thank You for Your Purchase!", 
+                `Dear ${formData.name},\n\nThank you for your purchase!`);
+            res.status(200).json({ status: "success", redirectUrl: `${process.env.BASE_URL}/success/${transactionId} `});
+        } else {
+            throw new Error("Some items failed to update.");
         }
 
     } catch (error) {
-        console.error("Error verifying payment:", error);
-        res.redirect(`${process.env.BASE_URL}/failure`);
+        console.error("Error in callback:", error);
+        res.status(500).json({ status: "error", message: "Internal server error while processing callback." });
     }
 });
+
 
 app.use("/api/v1", router);
 
