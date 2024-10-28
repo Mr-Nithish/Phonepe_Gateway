@@ -51,7 +51,7 @@ router.post("/payment", async (req, res) => {
             amount: price * 100,
             redirectUrl: `${process.env.BASE_URL}/success/${transactionId}`,
             redirectMode: "POST",
-            callbackUrl: `https://phonepe-gateway.onrender.com/api/v1/orders/callback/${transactionId}`,
+            callbackUrl: `https://infidiyas.com/api/v1/orders/callback/${transactionId}`,
             paymentInstrument: {
                 type: "PAY_PAGE"
             }
